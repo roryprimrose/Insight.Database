@@ -362,3 +362,17 @@ CREATE FUNCTION [ReflectTableFunction2](@p [BeerTable] READONLY, @q int)
 RETURNS TABLE AS
 	RETURN SELECT ID FROM @p
 GO
+
+CREATE TYPE [DateTimeTable] AS TABLE
+(
+	[Id] [UNIQUEIDENTIFIER],
+	[Value] [DATETIMEOFFSET]
+)
+GO
+GRANT EXEC ON TYPE::DateTimeTable TO public
+GO
+
+CREATE PROCEDURE [DateTimeTypeProc](@p [DateTimeTable] READONLY)
+AS
+SELECT * FROM @p
+GO

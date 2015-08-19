@@ -10,10 +10,12 @@ using System.Data;
 
 namespace Insight.Tests
 {
-	[TestFixture]
+    using NodaTime;
+
+    [TestFixture]
 	public class SerializationTests : BaseTest
-	{
-		public class CustomSerializerClass
+    {
+        public class CustomSerializerClass
 		{
 			[Column(SerializationMode = SerializationMode.Custom, Serializer = typeof(StringTrimDeserializer))]
 			public string Trimmed;
@@ -48,6 +50,61 @@ namespace Insight.Tests
     [TestFixture]
     public class CustomSerializationTests : BaseTest
     {
+        class DateTimeTable
+        {
+            public Guid Id;
+            public Instant Value;
+        }
+
+        public class InstantDeserializer : DbObjectSerializer
+        {
+            public override bool CanDeserialize(Type sourceType, Type targetType)
+            {
+                return targetType == typeof(Instant);
+            }
+            public override object SerializeObject(Type type, object o)
+            {
+                return ((Instant)o).ToDateTimeOffset();
+            }
+
+            public override object DeserializeObject(Type type, object o)
+            {
+                return Instant.FromDateTimeOffset((DateTimeOffset)o);
+            }
+        }
+
+        [Test]
+        public void CustomSerializerSupportsTableParameters()
+        {
+            DbSerializationRule.Serialize<Instant>(new InstantDeserializer());
+
+            var array = new List<DateTimeTable>
+            {
+                new DateTimeTable
+                {
+                    Id = Guid.NewGuid(),
+                    Value = SystemClock.Instance.Now
+                },
+                new DateTimeTable
+                {
+                    Id = Guid.NewGuid(),
+                    Value = SystemClock.Instance.Now - Duration.FromHours(-1)
+                }
+            };
+
+            var items = Connection().Query<DateTimeTable>("DateTimeTypeProc", array);
+
+            Assert.AreEqual(items.Count, 2);
+
+            var firstItem = items.Single(x => x.Id == array[0].Id);
+
+            Assert.AreEqual(firstItem.Value, array[0].Value);
+
+            var secondItem = items.Single(x => x.Id == array[1].Id);
+
+            Assert.AreEqual(secondItem.Value, array[1].Value);
+        }
+
         public class HasBool
         {
             public bool IsBool;
