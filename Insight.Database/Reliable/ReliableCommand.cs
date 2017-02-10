@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Insight.Database.CodeGenerator;
 
 namespace Insight.Database.Reliable
 {
@@ -42,19 +43,37 @@ namespace Insight.Database.Reliable
 		/// <inheritdoc/>
 		public override int ExecuteNonQuery()
 		{
-			return ExecuteWithRetry(() => InnerCommand.ExecuteNonQuery());
+			return ExecuteWithRetry(
+				() =>
+				{
+					FixupParameters();
+                    InnerConnection.EnsureIsOpen();
+					return InnerCommand.ExecuteNonQuery();
+				});
 		}
 
-		/// <inheritdoc/>
+		/// <inheritdoc/>	
 		protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
 		{
-			return ExecuteWithRetry(() => InnerCommand.ExecuteReader(behavior));
+			return ExecuteWithRetry(
+				() =>
+				{
+					FixupParameters();
+                    InnerConnection.EnsureIsOpen();
+					return InnerCommand.ExecuteReader(behavior);
+				});
 		}
 
 		/// <inheritdoc/>
 		public override object ExecuteScalar()
 		{
-			return ExecuteWithRetry(() => InnerCommand.ExecuteScalar());
+			return ExecuteWithRetry(
+				() =>
+				{
+					FixupParameters();
+                    InnerConnection.EnsureIsOpen();
+					return InnerCommand.ExecuteScalar();
+				});
 		}
 		#endregion
 
@@ -71,6 +90,9 @@ namespace Insight.Database.Reliable
 			// fallback to calling execute reader in a blocking task
 			return ExecuteWithRetryAsync(() =>
 			{
+				FixupParameters();
+                InnerConnection.EnsureIsOpen();
+
 				// start the sql command executing
 				var sqlCommand = InnerCommand as System.Data.SqlClient.SqlCommand;
 				if (sqlCommand != null)
@@ -88,22 +110,40 @@ namespace Insight.Database.Reliable
 #endif
 
 #if !NODBASYNC
-		/// <inheritdoc/>
-		protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, System.Threading.CancellationToken cancellationToken)
+        /// <inheritdoc/>
+		protected override Task<DbDataReader> ExecuteDbDataReaderAsync(CommandBehavior behavior, CancellationToken cancellationToken)
 		{
-			return ExecuteWithRetryAsync(() => InnerCommand.ExecuteReaderAsync(behavior, cancellationToken));
+			return ExecuteWithRetryAsync(
+				() =>
+				{
+					FixupParameters();
+
+                    return InnerConnection.EnsureIsOpenAsync(cancellationToken)
+                                          .ContinueWith(_ => InnerCommand.ExecuteReaderAsync(behavior, cancellationToken), cancellationToken)
+                                          .Unwrap();
+				});
 		}
 
 		/// <inheritdoc/>
-		public override Task<int> ExecuteNonQueryAsync(System.Threading.CancellationToken cancellationToken)
+		public override Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken)
 		{
-			return ExecuteWithRetryAsync(() => InnerCommand.ExecuteNonQueryAsync(cancellationToken));
+			return ExecuteWithRetryAsync(
+				() =>
+				{
+					FixupParameters();
+
+                    return InnerConnection.EnsureIsOpenAsync(cancellationToken)
+				                          .ContinueWith(_ => InnerCommand.ExecuteNonQueryAsync(cancellationToken), cancellationToken)
+				                          .Unwrap();
+				});
 		}
 
 		/// <inheritdoc/>
-		public override Task<object> ExecuteScalarAsync(System.Threading.CancellationToken cancellationToken)
+		public override Task<object> ExecuteScalarAsync(CancellationToken cancellationToken)
 		{
-			return ExecuteWithRetryAsync(() => InnerCommand.ExecuteScalarAsync(cancellationToken));
+		    return ExecuteWithRetryAsync(() => InnerConnection.EnsureIsOpenAsync(cancellationToken)
+		                                                      .ContinueWith(_ => InnerCommand.ExecuteScalarAsync(cancellationToken), cancellationToken)
+		                                                      .Unwrap());
 		}
 #endif
 		#endregion
@@ -138,6 +178,12 @@ namespace Insight.Database.Reliable
 		{
 			return _retryStrategy.ExecuteWithRetryAsync(this, function);
 		}
+
+        private void FixupParameters()
+        {
+            foreach (var reader in Parameters.OfType<DbParameter>().Select(p => p.Value).OfType<ObjectListDbDataReader>())
+                reader.Reset();
+        }
 		#endregion
 	}
 }

@@ -1465,8 +1465,8 @@ namespace Insight.Database
 				if (reader != null && !reader.IsClosed)
 					reader.Dispose();
 
-				if (closeConnection && connection.State != ConnectionState.Closed)
-					connection.Close();
+				if (closeConnection)
+                    connection.EnsureIsClosed();
 			}
 		}
 
@@ -1489,9 +1489,55 @@ namespace Insight.Database
 			finally
 			{
 				if (closeConnection)
-					connection.Close();
+					connection.EnsureIsClosed();
 			}
 		}
+
+		/// <summary>
+		/// Will automatically close the connection of the <see cref="IDbConnection"/> instance in context, if it is not currently closed.
+		/// </summary>
+		/// <param name="connection">The connection in context.</param>
+		internal static void EnsureIsClosed(this IDbConnection connection)
+		{
+			if (connection == null || connection.State == ConnectionState.Closed)
+			{
+				return;
+			}
+
+			connection.Close();
+		}
+
+		/// <summary>
+		/// Will automatically open the connection of the <see cref="IDbConnection"/> instance in context, if it is not currently open.
+		/// </summary>
+		/// <param name="connection">The connection in context.</param>
+		internal static void EnsureIsOpen(this IDbConnection connection)
+		{
+			if (connection == null || connection.State == ConnectionState.Open)
+			{
+				return;
+			}
+
+			connection.Open();
+		}
+
+#if !NODBASYNC
+		/// <summary>
+		/// Will automatically open the connection of the <see cref="IDbConnection"/> instance in context, if it is not currently open.
+		/// </summary>
+		/// <param name="connection">The connection in context.</param>
+		/// <param name="cancellationToken">A CancellationToken for the operation.</param>
+		/// <returns>A task representing the completion of the operation.</returns>
+		internal static Task EnsureIsOpenAsync(this DbConnectionWrapper connection, CancellationToken cancellationToken = default(CancellationToken))
+		{
+			if (connection == null || connection.State == ConnectionState.Open)
+			{
+				return Task.FromResult(false);
+			}
+
+			return connection.OpenAsync(cancellationToken);
+		}
+#endif
 
 		/// <summary>
 		/// Gets a reader that can read the list of objects into the given table. Used for bulk copy.

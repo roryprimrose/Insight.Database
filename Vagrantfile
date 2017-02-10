@@ -20,6 +20,12 @@ Vagrant.configure(2) do |config|
 		v.memory = 2048
 	end  
 
+	config.vm.provider "hyperv" do |v, override|
+		override.vm.box = "ericmann/trusty64"
+		v.vmname = "InsightTest"
+		v.memory = 2048
+	end
+
 	# DB2 Port
 	config.vm.network "forwarded_port", guest: 50000, host: 50000, host_ip: "127.0.0.1"
 	# MySQL Port
@@ -136,7 +142,7 @@ Vagrant.configure(2) do |config|
 		wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
 		sudo apt-get update
 		sudo -E apt-get -y install postgresql
-		export PGHOME=/etc/postgresql/9.4/main
+		export PGHOME=/etc/postgresql/9.5/main
 		sudo -E cp $VAGRANTHOME/postgresql.conf $PGHOME/postgresql.conf
 		sudo -E cp $VAGRANTHOME/pg_hba.conf $PGHOME/pg_hba.conf
 		sudo service postgresql restart

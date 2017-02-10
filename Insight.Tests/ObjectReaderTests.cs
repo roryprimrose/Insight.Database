@@ -5,6 +5,11 @@ using System.Text;
 using System.Threading.Tasks;
 using Insight.Database;
 using NUnit.Framework;
+using Insight.Database.Reliable;
+using System.Data.Common;
+#if !NET35
+using Moq;
+#endif
 
 #pragma warning disable 0649
 
@@ -333,5 +338,64 @@ namespace Insight.Tests
 			}
 		}
 		#endregion
+
+#if !NET35
+		#region Retry Tests
+		public class TestIssue215 : BaseTest
+		{
+			class TestData
+			{
+				public int i;
+			}
+
+			/// <summary>
+			/// When a TVP is retried, the ObjectList has already been read in the first pass and doesn't get sent up in the second pass.
+			/// </summary>
+			[Test]
+			public void RetryWithTableParameterShouldSendRecords()
+			{
+				// set up all exceptions as transient, since it is hard to reproduce them
+				var mockRetryStrategy = new Mock<RetryStrategy>();
+				mockRetryStrategy.Setup(r => r.IsTransientException(It.IsAny<Exception>())).Returns(true);
+				var retryStrategy = (RetryStrategy)mockRetryStrategy.Object;
+				retryStrategy.MaxRetryCount = 1;
+				retryStrategy.MaxBackOff = new TimeSpan(0, 0, 0, 0, 10);
+
+				try
+				{
+					Connection().ExecuteSql("CREATE TYPE TestTable AS TABLE (value int)");
+
+					using (var connection = Connection())
+					{
+						var reliable = new ReliableConnection((DbConnection)connection, retryStrategy);
+
+						reliable.ExecuteSql("CREATE TABLE TestTableFlag (id int)");
+						reliable.ExecuteSql(@"
+							CREATE PROC ProcWithTestTable (@table TestTable READONLY) AS 
+								IF NOT EXISTS (SELECT * FROM TestTableFlag)
+								BEGIN
+									INSERT INTO TestTableFlag VALUES (1);
+									RAISERROR ('Force a Retry', 16, 1);
+								END
+								ELSE
+									SELECT COUNT(*) FROM @table;
+						");
+
+						var list = new List<TestData>() { new TestData() { i = 1 } };
+						var count = reliable.ExecuteScalar<int>("ProcWithTestTable", new { table = list });
+
+						Assert.AreEqual(list.Count, count);
+					}
+				}
+				finally
+				{
+					Connection().ExecuteSql("DROP PROC ProcWithTestTable");
+					Connection().ExecuteSql("DROP TABLE TestTableFlag");
+					Connection().ExecuteSql("DROP TYPE TestTable");
+				}
+			}
+		}
+		#endregion
+#endif
 	}
 }
